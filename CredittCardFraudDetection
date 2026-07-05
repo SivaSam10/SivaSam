@@ -1,0 +1,61 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from xgboost import XGBClassifier
+
+# Load Dataset
+data = pd.read_csv("/home/rohit/Downloads/fraudTrain.csv")
+print(data.columns.tolist())  # sanity check column names first
+
+# Drop columns that aren't useful as raw features (IDs, free text, raw dates)
+drop_cols = [
+    "Unnamed: 0", "trans_date_trans_time", "cc_num", "merchant",
+    "first", "last", "street", "city", "state", "zip", "job",
+    "dob", "trans_num", "unix_time"
+]
+data = data.drop(columns=[c for c in drop_cols if c in data.columns])
+
+# Encode remaining categoricals
+cat_cols = data.select_dtypes(include="object").columns.tolist()
+if "is_fraud" in cat_cols:
+    cat_cols.remove("is_fraud")
+data = pd.get_dummies(data, columns=cat_cols, drop_first=True)
+
+# Features and Target
+target_col = "is_fraud" if "is_fraud" in data.columns else "Class"
+X = data.drop(target_col, axis=1)
+y = data[target_col]
+
+# Split Dataset (stratify to preserve class ratio in train/test)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+# Create XGBoost Model
+# scale_pos_weight helps with class imbalance: (negative count / positive count)
+scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
+
+model = XGBClassifier(
+    n_estimators=100,
+    learning_rate=0.1,
+    max_depth=4,
+    scale_pos_weight=scale_pos_weight,
+    random_state=42,
+    eval_metric="logloss"
+)
+
+# Train Model
+model.fit(X_train, y_train)
+
+# Predict
+y_pred = model.predict(X_test)
+
+# Metrics
+accuracy = accuracy_score(y_test, y_pred)
+print("Accuracy:", accuracy)
+
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred))
+
+print("\nConfusion Matrix:")
+print(confusion_matrix(y_test, y_pred))
